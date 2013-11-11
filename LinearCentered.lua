@@ -2,12 +2,14 @@ local Linear, parent = torch.class('nn.LinearCentered', 'nn.Module')
 
 function Linear:__init(inputSize, outputSize, lambda)
    parent.__init(self)
-
+  
    self.weight = torch.Tensor(outputSize, inputSize)
    self.bias = torch.Tensor(outputSize)
    self.gradWeight = torch.Tensor(outputSize, inputSize)
    self.gradBias = torch.Tensor(outputSize)
-   self.inputMean = torch.Tensor(outputSize)  
+   self.outputMean = torch.Tensor(outputSize)
+   self.outputVar = torch.Tensor(outputSize)
+   self.batchSize = 100
    self.nBatches = 0 
    self.lambda = lambda
    self:reset()
@@ -36,20 +38,23 @@ end
 function Linear:updateOutput(input)
    if input:dim() == 1 then
       self.output:resize(self.bias:size(1))
-      self.output:copy(self.bias)
-      self.output:addmv(1, self.weight, input)
-	  --update running average of the outputs
-	  self.inputMean:mul(self.nBatches/(self.nBatches+1))
-	  self.inputMean:add((1/(self.nBatches+1)),self.output)
+      -- multiply by the weights
+      self.output:zero():addmv(1, self.weight, input)
+      -- update running average of the unbiased outputs
+      --self.outputMean:add((1/(self.nBatches+1)),self.output)
+      -- add the bias
+      self.output:add(self.bias)
    elseif input:dim() == 2 then
       local nframe = input:size(1)
       local nunit = self.bias:size(1)
       self.output:resize(nframe, nunit)
-      self.output:zero():addr(1, input.new(nframe):fill(1), self.bias)
-      self.output:addmm(1, input, self.weight:t())
-	  -- update running average of the inputs
-	  self.inputMean:mul(self.nBatches/(self.nBatches+1))
-	  self.inputMean:add((1/(self.nBatches+1)),torch.mean(self.output,1))
+      self.output:zero():addmm(1, input, self.weight:t())
+      -- update running statistics of the unbiased inputs
+      self.outputMean = torch.mean(self.output,1)
+      self.outputStd = torch.std(self.output,1)
+      -- we set the biases so that they set (1-lambda) percent of the samples to 0
+      self.bias = inormcdf(self.lambda,self.outputMean, self.outputStd)
+      self.output:addr(1, input.new(nframe):fill(1), self.bias)
    else
       error('input must be vector or matrix')
    end
@@ -87,8 +92,8 @@ function Linear:accGradParameters(input, gradOutput, scale)
       local nframe = input:size(1)
       local nunit = self.bias:size(1)
       self.gradWeight:addmm(scale, gradOutput:t(), input)
-      self.gradBias:addmv(scale*(1-lambda), gradOutput:t(), input.new(nframe):fill(1))
-	  self.gradBias:add(scale*lambda*nframe, self.bias - self.inputMean)
+      --self.gradBias:addmv(scale, gradOutput:t(), input.new(nframe):fill(1))
+	   --self.gradBias:add(self.lambda*2, self.bias - self.outputMean)
    end
 
 end
