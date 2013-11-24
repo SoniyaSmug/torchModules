@@ -10,8 +10,8 @@ function Linear:__init(inputSize, outputSize, lambda)
    self.outputMean = torch.Tensor(outputSize)
    self.outputVar = torch.Tensor(outputSize)
    self.batchSize = 100
-   self.nBatches = 0 
-   self.lambda = lambda
+   self.batchCntr = 0 
+   self.lambda = torch.Tensor(outputSize):fill(lambda)
    self:reset()
 end
 
@@ -41,7 +41,15 @@ function Linear:updateOutput(input)
       -- multiply by the weights
       self.output:zero():addmv(1, self.weight, input)
       -- update running average of the unbiased outputs
-      --self.outputMean:add((1/(self.nBatches+1)),self.output)
+	  self.outputMean:add(self.output)
+	  -- TODO: update standard deviation 
+	  self.batchCntr = self.batchCntr + 1
+	  -- if we have finished a batch, update the bias
+	  if self.batchCntr == self.batchSize then
+	     self.bias:copy(self.outputMean)
+		 self.bias:div(self.batchSize)
+		 self.batchCntr = 0
+	  end
       -- add the bias
       self.output:add(self.bias)
    elseif input:dim() == 2 then
@@ -58,8 +66,6 @@ function Linear:updateOutput(input)
    else
       error('input must be vector or matrix')
    end
-   self.nBatches = self.nBatches + 1
-
    return self.output
 end
 
