@@ -3,6 +3,7 @@ require 'optim'
 
 dofile('LinearCentered.lua')
 dofile('stats.lua')
+dofile('loadData.lua')
 torch.manualSeed(123)
 torch.setdefaulttensortype('torch.FloatTensor')
 
@@ -41,34 +42,22 @@ targets[{1,nSamples/2}]=1
 targets=targets+1
 --]]
 
-dataPath = '/home/mikael/Work/Data/mnist-torch7/train_28x28.th7nn'
-
-
--- load data into CPU memory
-train_data = torch.load(dataPath)
-
--- -- hack Reshape
-nInputs = train_data['data']:size(2)*train_data['data']:size(3)*train_data['data']:size(4)
-nSamples = train_data['data']:size(1)
-train_data.data:resize(nSamples,nInputs)
-data=train_data.data
-targets=train_data['labels']
-
-
 
 nHidden=5
-lambda=0.8
+lambda=0.5
 batchSize=50
 nClasses=10
-nSamples=5000
-data=data[{{1,nSamples},{}}]
-targets=targets[{{1,nSamples},{}}]
-
+nSamples=1000
+centering=1
+data,targets=loadData('MNIST','train',nSamples)
 
 
 -- make model
+nInputs=data:size(2)
+nHidden=5
 model=nn.Sequential()
-model:add(nn.LinearCentered(nInputs,nHidden,lambda))
+--model:add(nn.Linear(nInputs,nHidden))
+model:add(nn.LinearCentered(nInputs,nHidden,centering,lambda))
 model:add(nn.Threshold())
 model:add(nn.Linear(nHidden,nClasses))
 model:add(nn.LogSoftMax())
@@ -98,7 +87,7 @@ sgd_params = {
    momentum = 0
 }
 
-epochs=5
+epochs=20
 
 for i=1,epochs do
 	current_loss=0
