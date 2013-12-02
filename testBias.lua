@@ -71,7 +71,7 @@ m1=nn.Sequential():add(model.modules[1]):add(model.modules[2])
 d1=m1:forward(data)
 gnuplot.hist(d1[{{},1}])
 
--- see what proportion of samples is set to 0
+-- see what proportion of samples is non-zero
 m2=nn.Sequential():add(m1):add(model.modules[3])
 d2=m2:forward(data)
 a=torch.Tensor(nHidden)
