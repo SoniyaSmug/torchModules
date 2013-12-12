@@ -1,3 +1,5 @@
+dofile('stats.lua')
+
 local AdaBias, parent = torch.class('nn.AdaBias','nn.Module')
 
 function AdaBias:__init(inputSize, centering, lambda, alpha)
@@ -27,37 +29,12 @@ function AdaBias:updateOutput(input)
 	if input:dim() == 1 then
 		self.output:resize(self.bias:size(1))
 		self.output:copy(input)
-      -- update running average 
-      self.mean:mul(1-self.alpha)
-      self.mean:add(self.alpha,input)
-      -- update running variance
-      self.variance:mul(1-self.alpha)
-      self.variance:add(self.alpha, torch.pow(input-self.mean,2))
-		-- if using hard centering, compute bias which sets (1-lambda) of samples to 0
-      if self.centering == 1 then
-         self.bias = inormcdf(self.lambda, self.mean, torch.sqrt(self.variance))
-      end
-      -- add the bias
       self.output:add(self.bias)
-
 	elseif input:dim() == 2 then
 		local nframe = input:size(1)
 		local nunit = self.bias:size(1)
 		self.output:resize(nframe,nunit)
 		self.output:copy(input)
-      -- update running average
-		self.sampleMean = torch.mean(input,1)
-      self.mean:mul(1-self.alpha)
-      self.mean:add(self.alpha, self.sampleMean)
-		-- update running variance
-      self.variance:mul(1-self.alpha)
-		self.mean:resize(1,nunit)
-		self.sampleVariance=torch.mean(torch.pow(input - torch.expand(self.mean,nframe,nunit),2),1)
-		self.variance:add(self.alpha,self.sampleVariance)
-		self.mean:resize(nunit)
-		if self.centering == 1 then
-			self.bias = inormcdf(self.lambda,self.mean, torch.sqrt(self.variance))
-		end
 		self.output:addr(1, input.new(nframe):fill(1), self.bias)
 	else 
 		error('input must be vector or matrix')
@@ -70,13 +47,6 @@ function AdaBias:updateGradInput(input, gradOutput)
 	if self.gradInput then 
 		self.gradInput:resizeAs(input)
 		self.gradInput:copy(gradOutput)
-		-- TODO: account for dependence between running mean/variance and current sample (should be small)
-		--[[ 
-		local d1=torch.Tensor(self.mean:size()):fill(1+self.alpha)
-		local d2=(self.sampleMean-self.mean)*2*self.alpha*inormcdf(torch.Tensor({self.lambda[1]}),0,1)[1]
-		local s=inormcdf(torch.Tensor({self.lambda[1]}),0,1)[1]
-		self.gradInput:cmul(torch:Tensor(input:size()):fill(1+self.alpha) + (self.sampleMean-self.mean)*2*self.alpha*inormcdf(torch.Tensor({self.lambda[1]}),0,1)[1])
-		--]]
 		return self.gradInput
 	end
 end
@@ -85,18 +55,40 @@ end
 function AdaBias:accGradParameters(input, gradOutput, scale)
 	scale = scale or 1
 	if input:dim() == 1 then
-		if self.centering == 2 then
+      -- update running average 
+      self.mean:mul(1-self.alpha)
+      self.mean:add(self.alpha,input)
+      -- update running variance
+      self.variance:mul(1-self.alpha)
+      self.variance:add(self.alpha, torch.pow(input-self.mean,2))
+		-- set the bias
+      if self.centering == 1 then
+         self.bias = inormcdf(self.lambda, self.mean, torch.sqrt(self.variance))
+		elseif self.centering == 2 then
 			self.gradBias:add(scale, gradOutput)
 			self.gradBias:add(scale*self.lambda[1]*2, self.mean - self.bias)
 		end
 	elseif input:dim() == 2 then
 		local nframe = input:size(1)
 		local nunit = self.bias:size(1)
-		if self.centering == 2 then
+      -- update running average
+		self.sampleMean = torch.mean(input,1)
+      self.mean:mul(1-self.alpha)
+      self.mean:add(self.alpha, self.sampleMean)
+		-- update running variance
+		self.mean:resize(1,nunit)
+		self.sampleVariance=torch.mean(torch.pow(input - torch.expand(self.mean,nframe,nunit),2),1)
+		self.mean:resize(nunit)
+      self.variance:mul(1-self.alpha)
+		self.variance:add(self.alpha,self.sampleVariance)
+		-- set the bias
+		if self.centering == 1 then
+			self.bias = inormcdf(self.lambda,self.mean, torch.sqrt(self.variance))
+		elseif self.centering == 2 then
 			self.gradBias:addmv(scale, gradOutput:t(), input.new(nframe):fill(1))
-			local diff = self.mean - self.bias
-			diff:div(diff:norm())
-         self.gradBias:add(scale*self.lambda[1]*2, diff)
+			--local diff = self.mean - self.bias
+			--diff:div(diff:norm())
+         self.gradBias:add(scale*self.lambda[1]*2, self.mean - self.bias)
 		end
 	end
 end
