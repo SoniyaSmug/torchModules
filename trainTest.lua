@@ -4,13 +4,11 @@ function trainModel(model, criterion, data, labels, opt, logger)
 	local optimMethod = opt.optimMethod
 	local optimState = opt.optimState
 	local batchSize = opt.batchSize
-	local classes = opt.classes
 	local trsize = data:size(1)
-	local confusion = optim.ConfusionMatrix(classes)
-	local verbose = false
+	local confusion = optim.ConfusionMatrix(opt.classes)
 
 	-- get model parameters
-	local w,dL_dw = model:getParameters()
+	w,dL_dw = model:getParameters()
 	-- shuffle at each epoch
 	local shuffle = torch.randperm(trsize)
 	
@@ -20,7 +18,7 @@ function trainModel(model, criterion, data, labels, opt, logger)
 		-- create minibatch
 		local inputs = {}
 		local targets = {}
-		for i = 1,math.min(t+batchSize-1, trsize) do
+		for i = t,math.min(t+batchSize-1, trsize) do
 			-- load new sample
 			local input = data[shuffle[i]]
 			local target = labels[shuffle[i]]
@@ -44,7 +42,7 @@ function trainModel(model, criterion, data, labels, opt, logger)
 			dL_dw:zero()
 			
 			-- L is the average loss
-			L = 0
+			local L = 0
 			
 			-- evaluate function for complete minibatch
 			for i=1,#inputs do
@@ -73,26 +71,16 @@ function trainModel(model, criterion, data, labels, opt, logger)
 		optimMethod(feval,w,optimState)
 	end
 	print('Loss: ' .. L)
-	if verbose then
-		print(confusion)
-	end
+	print(confusion)
 
 	-- record log info
-	if logger then
+	if true then
 		logger:add{['% mean class accuracy (train set)'] = confusion.totalValid * 100}
-		if verbose then
+		if opt.plot then
 			logger:style{['% mean class accuracy (train set)'] = '-'}
 			logger:plot()
 		end
 	end
-
-   --save/log current net
-   local filename = paths.concat(opt.save, 'model.net')
-   os.execute('mkdir -p ' .. sys.dirname(filename))
-   print('==> saving model to '..filename)
-   torch.save(filename, model)
-
-	
 end
 
 
@@ -114,7 +102,7 @@ function testModel(model, data, labels, opt, logger)
 		local pred = model:forward(input)
 		confusion:add(pred,target)
 	end
-	
+
 	print(confusion)
 	
   -- update log/plot
